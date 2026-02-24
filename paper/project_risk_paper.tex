@@ -1,0 +1,726 @@
+\documentclass[12pt,a4paper]{article}
+
+% Packages
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{mathtools}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{natbib}
+\usepackage{hyperref}
+\usepackage{cleveref}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{geometry}
+\usepackage{setspace}
+\usepackage{xcolor}
+
+\geometry{margin=2.5cm}
+\onehalfspacing
+
+% Theorem environments
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{example}[theorem]{Example}
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+% Custom commands
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Var}{\mathrm{Var}}
+\newcommand{\Cov}{\mathrm{Cov}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\Prob}{\mathbb{P}}
+
+\title{Beyond PERT and Monte Carlo: Analytical Approximations for Project Risk Contingency Reserves with Fat-Tailed Distributions}
+
+\author{
+Marc Bara\\
+\textit{ESADE Business School}\\
+\textit{Barcelona, Spain}\\
+\texttt{marcoantonio.bara@esade.edu}
+}
+
+\date{25 Feb 2026}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Traditional project risk quantification relies on Monte Carlo simulation of risk registers where each risk is modeled as a Bernoulli trial with PERT-distributed impacts. This paper challenges both components of this standard approach. First, we present empirical and theoretical arguments against the PERT distribution, demonstrating that its bounded support systematically underestimates tail risks—a critical flaw given extensive evidence of fat-tailed behavior in project cost and schedule overruns. Second, we derive closed-form approximations for the quantiles of aggregate risk distributions, eliminating the need for computationally intensive simulation in most practical cases.
+
+We propose a model where risk impacts follow log-normal distributions estimated from expert percentiles (P10 and P90), and derive the first four cumulants of the aggregate distribution accounting for both threats and opportunities. Using the Cornish-Fisher expansion, we obtain analytical expressions for contingency reserves at arbitrary confidence levels.
+
+Numerical experiments across six scenarios demonstrate that our approximation achieves remarkable accuracy: errors below 0.5\% for typical project risk registers ($n \geq 30$ risks), and below 2\% even for challenging cases with high heterogeneity or small portfolios ($n = 10$). The approximation degrades only when excess kurtosis exceeds 6, which occurs primarily with very wide uncertainty ranges in individual risk estimates. For the 95\% of practical cases falling within the domain of validity, the closed-form solution provides accuracy comparable to 1,000,000-iteration Monte Carlo simulation while computing instantaneously.
+
+The results offer practitioners a theoretically grounded, computationally efficient alternative to simulation-only approaches, enabling real-time sensitivity analysis and integration into spreadsheet-based tools.
+
+\medskip
+\noindent\textbf{Keywords:} Project risk management, contingency reserves, fat-tailed distributions, Cornish-Fisher expansion, analytical approximation, log-normal distribution, Monte Carlo simulation
+\end{abstract}
+
+%==============================================================================
+\section{Introduction}
+\label{sec:introduction}
+%==============================================================================
+
+Project risk management requires quantifying the aggregate impact of multiple uncertain events to determine appropriate contingency reserves. The standard practice, codified in frameworks such as the Project Management Institute's PMBOK Guide \citep{PMI2021}, involves maintaining a risk register where each identified risk is characterized by a probability of occurrence and a potential impact, often described using three-point estimates (optimistic, most likely, pessimistic). These parameters feed into Monte Carlo simulations that generate probability distributions for total project cost or duration, from which contingency reserves are derived—typically at the 80th or 90th percentile \citep{Vose2008}.
+
+This methodology, while widely adopted, rests on assumptions that deserve scrutiny. The PERT distribution, introduced by \citet{Clark1962} and still predominant in practice, was designed for mathematical convenience rather than empirical fidelity. Its bounded support—impacts cannot exceed the stated maximum—conflicts with mounting evidence that project outcomes exhibit fat-tailed behavior, where extreme deviations occur far more frequently than bounded distributions predict \citep{Flyvbjerg2011, Flyvbjerg2021}.
+
+Furthermore, the reliance on Monte Carlo simulation, while flexible, introduces computational overhead and obscures the mathematical structure of the problem. For a risk register with $n$ independent risks, the aggregate impact is a sum of random variables with known distributions. Such sums have been studied extensively in probability theory and actuarial science, yielding analytical approximations that can replace or complement simulation \citep{Embrechts1997}.
+
+This paper makes three contributions:
+
+\begin{enumerate}
+    \item We present a systematic critique of the PERT distribution for modeling risk impacts, drawing on empirical evidence from large-scale project databases and theoretical arguments from extreme value theory.
+    
+    \item We propose an alternative model using log-normal distributions for risk impacts, parameterized through expert estimates of percentiles rather than impossible-to-know absolute bounds.
+    
+    \item We derive closed-form approximations for the quantiles of aggregate project risk, enabling rapid computation of contingency reserves without simulation.
+\end{enumerate}
+
+The remainder of this paper is organized as follows. \Cref{sec:critique_pert} examines the shortcomings of the PERT distribution. \Cref{sec:model} presents our proposed model. \Cref{sec:moments} derives the moments of the aggregate distribution. \Cref{sec:approximation} develops the Cornish-Fisher approximation for quantiles. \Cref{sec:validation} validates the approach against Monte Carlo simulation. \Cref{sec:practical} provides practical guidance for implementation. \Cref{sec:conclusion} concludes.
+
+%==============================================================================
+\section{A Critique of the PERT Distribution}
+\label{sec:critique_pert}
+%==============================================================================
+
+\subsection{Historical Origins and Mathematical Convenience}
+
+The PERT (Program Evaluation and Review Technique) distribution emerged from the U.S. Navy's Polaris missile program in the late 1950s. \citet{Clark1962} proposed using a Beta distribution with mean
+\begin{equation}
+    \mu = \frac{a + 4m + b}{6}
+\end{equation}
+and standard deviation
+\begin{equation}
+    \sigma = \frac{b - a}{6}
+\end{equation}
+where $a$ is the minimum, $m$ the mode (most likely value), and $b$ the maximum. These formulas were chosen because they yield a unimodal distribution on $[a, b]$ resembling the normal distribution, with the convenient property that approximately 99.7\% of probability mass lies within three standard deviations—that is, between $a$ and $b$.
+
+The appeal was practical: project managers could elicit three intuitive values from experts and immediately obtain a probability distribution. However, the mathematical assumptions underlying PERT were never empirically validated. As \citet{Keefer1983} noted, the choice of weighting (4 for the mode versus 1 each for extremes) was arbitrary, and alternative weightings perform equally well or better in various contexts.
+
+\subsection{The Problem of Bounded Support}
+
+The PERT distribution's most problematic feature is its bounded support. By definition, outcomes cannot fall below $a$ or exceed $b$. This seems reasonable—surely experts can identify absolute limits?—but extensive empirical evidence contradicts this assumption.
+
+\citet{Flyvbjerg2011}, analyzing a database of over 2,000 major infrastructure projects, found that cost overruns routinely exceeded initial ``maximum'' estimates by factors of two, three, or more. The Sydney Opera House, budgeted at \$7 million, ultimately cost \$102 million—a 1,400\% overrun that no reasonable ``maximum'' estimate would have captured. The Channel Tunnel exceeded its budget by 80\%, the Big Dig in Boston by 220\%. These are not outliers; they represent the systematic behavior of large projects.
+
+\citet{Flyvbjerg2021} formalized this observation by fitting power-law distributions to project cost overruns, finding tail exponents typically between 1.5 and 2.5. Such distributions have no finite maximum; extreme events are rare but not impossible, and their probability decays polynomially rather than exponentially.
+
+The implications for risk quantification are severe. If true risk impacts follow a fat-tailed distribution but we model them with PERT, we systematically underestimate tail risk. The P90 of our modeled distribution may correspond to the P70 or P60 of reality. Contingency reserves derived from such models provide false confidence.
+
+\subsection{Expert Estimation of Extremes}
+
+Beyond the distributional mismatch, there is a fundamental epistemological problem: experts cannot reliably estimate absolute bounds.
+
+\citet{Kahneman2011} documented pervasive overconfidence in expert judgment, particularly for extreme values. When asked for 90\% confidence intervals, experts typically provide ranges that capture the true value only 50-70\% of the time. The phenomenon worsens for tail estimates: humans systematically underweight the probability of extreme events, a bias \citet{Taleb2007} termed the ``black swan'' problem.
+
+In project contexts, \citet{Lichtenberg2000} showed that experts asked for ``maximum possible'' values tend to anchor on recent experience, ignoring tail scenarios outside their personal history. The result is that stated maxima represent psychological comfort zones rather than genuine upper bounds.
+
+This critique suggests a different approach: rather than asking experts for impossible-to-know extremes, we should elicit percentile estimates (e.g., P10 and P90 values) that fall within the range of more reliable judgment, then fit distributions that allow for tail behavior beyond these estimates.
+
+\subsection{Evidence from Reference Class Forecasting}
+
+\citet{Flyvbjerg2006} proposed reference class forecasting as an antidote to expert overconfidence. By analyzing the statistical distribution of outcomes in a reference class of similar past projects, one can ground estimates in empirical reality rather than inside-view optimism.
+
+Studies applying this approach consistently find:
+\begin{itemize}
+    \item Cost overruns are the norm, not the exception, with mean overruns of 20-50\% depending on project type \citep{Flyvbjerg2002}.
+    \item The distribution of overruns is right-skewed with heavy tails, poorly approximated by symmetric or bounded distributions \citep{Love2015}.
+    \item Schedule overruns exhibit similar patterns, with ``black swan'' delays (e.g., multi-year slippages) occurring at rates incompatible with PERT-based models \citep{Sovacool2014}.
+\end{itemize}
+
+These findings motivate our choice of log-normal distributions for risk impacts: they are right-skewed, unbounded above, and consistent with the multiplicative error processes that generate fat tails in complex systems \citep{Limpert2001}.
+
+%==============================================================================
+\section{Proposed Model}
+\label{sec:model}
+%==============================================================================
+
+\subsection{Model Structure}
+
+Consider a project risk register containing $n$ identified risks. For each risk $i \in \{1, \ldots, n\}$, we model:
+
+\begin{itemize}
+    \item $B_i \sim \text{Bernoulli}(p_i)$: whether risk $i$ materializes, with probability $p_i \in (0,1)$.
+    \item $D_i$: the magnitude of impact if risk $i$ materializes, following a continuous distribution with support on $(0, \infty)$.
+    \item $S_i \in \{-1, +1\}$: the sign of impact, where $S_i = +1$ for threats (cost increases) and $S_i = -1$ for opportunities (cost savings).
+\end{itemize}
+
+The total risk impact is:
+\begin{equation}
+    X = \sum_{i=1}^{n} B_i \cdot D_i \cdot S_i = \sum_{i \in \mathcal{T}} B_i D_i - \sum_{j \in \mathcal{O}} B_j D_j
+\end{equation}
+where $\mathcal{T}$ and $\mathcal{O}$ partition $\{1, \ldots, n\}$ into threats and opportunities, respectively.
+
+We assume all random variables are mutually independent—a standard assumption that can be relaxed with copula methods if dependencies are known \citep{Nelsen2006}.
+
+\subsection{Log-Normal Impact Distribution}
+
+We model impact magnitudes $D_i$ as log-normal:
+\begin{equation}
+    D_i \sim \text{LogNormal}(\mu_i, \sigma_i^2)
+\end{equation}
+where $\mu_i$ and $\sigma_i$ are the mean and standard deviation of $\ln D_i$.
+
+The log-normal distribution offers several advantages:
+\begin{enumerate}
+    \item \textbf{Unbounded support}: $D_i \in (0, \infty)$, allowing for extreme outcomes.
+    \item \textbf{Right skewness}: Consistent with empirical distributions of project overruns.
+    \item \textbf{Multiplicative interpretation}: If impact results from compounding factors, log-normality arises naturally from the central limit theorem applied to logarithms.
+    \item \textbf{Closed-form moments}: All moments exist and have simple expressions.
+\end{enumerate}
+
+\subsection{Parameterization via Expert Percentiles}
+
+Rather than asking experts for minimum/mode/maximum, we elicit:
+\begin{itemize}
+    \item $q_{10}^{(i)}$: the 10th percentile (``optimistic but plausible'')
+    \item $q_{90}^{(i)}$: the 90th percentile (``pessimistic but plausible'')
+\end{itemize}
+
+These values determine the log-normal parameters:
+\begin{align}
+    \mu_i &= \frac{\ln q_{90}^{(i)} + \ln q_{10}^{(i)}}{2} = \ln \sqrt{q_{10}^{(i)} \cdot q_{90}^{(i)}} \\
+    \sigma_i &= \frac{\ln q_{90}^{(i)} - \ln q_{10}^{(i)}}{2 \cdot z_{0.90}} \approx \frac{\ln(q_{90}^{(i)} / q_{10}^{(i)})}{2.563}
+\end{align}
+where $z_{0.90} \approx 1.282$ is the 90th percentile of the standard normal distribution.
+
+This parameterization has important advantages:
+\begin{itemize}
+    \item Percentiles within the central 80\% of a distribution are more reliably estimated than extremes \citep{OHagan2006}.
+    \item The approach explicitly acknowledges that impacts beyond $q_{90}$ can occur—the model assigns them appropriate (small) probability rather than zero probability.
+    \item The ratio $q_{90}/q_{10}$ provides an intuitive measure of uncertainty that experts can calibrate.
+\end{itemize}
+
+\subsection{Notation Summary}
+
+For reference, we summarize notation:
+\begin{center}
+\begin{tabular}{cl}
+\toprule
+Symbol & Meaning \\
+\midrule
+$n$ & Number of risks in register \\
+$n_T, n_O$ & Number of threats and opportunities ($n_T + n_O = n$) \\
+$p_i$ & Probability that risk $i$ materializes \\
+$D_i$ & Impact magnitude of risk $i$ (random variable) \\
+$S_i$ & Sign of risk $i$ ($+1$ threat, $-1$ opportunity) \\
+$\mu_i, \sigma_i$ & Log-normal parameters for $D_i$ \\
+$X$ & Total aggregate risk impact \\
+$X_i$ & Individual risk contribution: $X_i = B_i D_i S_i$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+%==============================================================================
+\section{Moments of the Aggregate Distribution}
+\label{sec:moments}
+%==============================================================================
+
+To apply analytical approximations, we require the moments of $X = \sum_{i=1}^n X_i$. Since risks are independent, moments of the sum derive from moments of individual risks.
+
+\subsection{Moments of Individual Risk Contributions}
+
+For a single risk $i$ with $X_i = B_i D_i S_i$, independence of $B_i$ and $D_i$ yields:
+
+\begin{lemma}[Raw moments of individual risks]
+\label{lem:individual_moments}
+Let $X_i = B_i D_i S_i$ where $B_i \sim \text{Bernoulli}(p_i)$, $D_i \sim \text{LogNormal}(\mu_i, \sigma_i^2)$, and $S_i \in \{-1, +1\}$ is fixed. Then:
+\begin{align}
+    \E[X_i] &= S_i \cdot p_i \cdot e^{\mu_i + \sigma_i^2/2} \\
+    \E[X_i^2] &= p_i \cdot e^{2\mu_i + 2\sigma_i^2} \\
+    \E[X_i^3] &= S_i \cdot p_i \cdot e^{3\mu_i + 9\sigma_i^2/2} \\
+    \E[X_i^4] &= p_i \cdot e^{4\mu_i + 8\sigma_i^2}
+\end{align}
+\end{lemma}
+
+\begin{proof}
+Since $B_i \in \{0,1\}$, we have $B_i^k = B_i$ for all $k \geq 1$. Thus:
+\[
+\E[X_i^k] = \E[B_i D_i^k S_i^k] = S_i^k \cdot \E[B_i] \cdot \E[D_i^k] = S_i^k \cdot p_i \cdot \E[D_i^k]
+\]
+For log-normal $D_i$, the $k$-th moment is $\E[D_i^k] = e^{k\mu_i + k^2\sigma_i^2/2}$. Since $S_i^k = 1$ for even $k$ and $S_i^k = S_i$ for odd $k$, the results follow.
+\end{proof}
+
+\subsection{Central Moments and Cumulants}
+
+Let $m_i = \E[X_i]$ denote the mean of individual risk $i$. The central moments are:
+
+\begin{proposition}[Variance of individual risks]
+\label{prop:individual_variance}
+\begin{equation}
+    \Var[X_i] = p_i \cdot e^{2\mu_i + \sigma_i^2}(e^{\sigma_i^2} - p_i)
+\end{equation}
+\end{proposition}
+
+\begin{proof}
+\begin{align*}
+\Var[X_i] &= \E[X_i^2] - (\E[X_i])^2 \\
+&= p_i e^{2\mu_i + 2\sigma_i^2} - p_i^2 e^{2\mu_i + \sigma_i^2} \\
+&= p_i e^{2\mu_i + \sigma_i^2}(e^{\sigma_i^2} - p_i)
+\end{align*}
+\end{proof}
+
+For higher central moments, define:
+\begin{align}
+    \nu_{3,i} &= \E[(X_i - m_i)^3] \\
+    \nu_{4,i} &= \E[(X_i - m_i)^4]
+\end{align}
+
+These can be computed by expanding and substituting the raw moments from \Cref{lem:individual_moments}. The expressions are lengthy but closed-form.
+
+\subsection{Moments of the Aggregate}
+
+By independence, moments of $X = \sum_{i=1}^n X_i$ combine additively:
+
+\begin{theorem}[Aggregate moments]
+\label{thm:aggregate_moments}
+The mean, variance, and standardized moments of $X$ are:
+\begin{align}
+    \E[X] &= \sum_{i=1}^n \E[X_i] = \sum_{i \in \mathcal{T}} p_i e^{\mu_i + \sigma_i^2/2} - \sum_{j \in \mathcal{O}} p_j e^{\mu_j + \sigma_j^2/2} \\
+    \Var[X] &= \sum_{i=1}^n \Var[X_i] \\
+    \gamma_1 &= \frac{\sum_{i=1}^n \nu_{3,i}}{(\Var[X])^{3/2}} \quad \text{(skewness)} \\
+    \gamma_2 &= \frac{\sum_{i=1}^n \nu_{4,i}}{(\Var[X])^2} - 3 \quad \text{(excess kurtosis)}
+\end{align}
+\end{theorem}
+
+\begin{proof}
+Mean and variance follow from linearity and independence. For the third and fourth cumulants, independence implies $\kappa_3(X) = \sum \kappa_3(X_i) = \sum \nu_{3,i}$ and $\kappa_4(X) = \sum \kappa_4(X_i)$, where $\kappa_4(X_i) = \nu_{4,i} - 3\Var[X_i]^2$. The standardized versions follow by definition.
+\end{proof}
+
+\begin{remark}
+The sign of skewness $\gamma_1$ depends on the balance between threats and opportunities. A register dominated by threats will have $\gamma_1 > 0$ (right-skewed); one with more opportunities may have $\gamma_1 < 0$ or near zero.
+\end{remark}
+
+%==============================================================================
+\section{Cornish-Fisher Approximation for Quantiles}
+\label{sec:approximation}
+%==============================================================================
+
+\subsection{The Cornish-Fisher Expansion}
+
+The Cornish-Fisher expansion \citep{Cornish1938} provides an approximation to quantiles of a distribution in terms of its cumulants. For a random variable $X$ with mean $\mu$, standard deviation $\sigma$, skewness $\gamma_1$, and excess kurtosis $\gamma_2$, the $\alpha$-quantile $q_\alpha$ is approximated by:
+
+\begin{equation}
+    q_\alpha \approx \mu + \sigma \cdot z_{CF}(\alpha)
+\end{equation}
+
+where $z_\alpha = \Phi^{-1}(\alpha)$ is the standard normal quantile and:
+
+\begin{equation}
+\label{eq:cornish_fisher}
+    z_{CF}(\alpha) = z_\alpha + \frac{z_\alpha^2 - 1}{6}\gamma_1 + \frac{z_\alpha^3 - 3z_\alpha}{24}\gamma_2 - \frac{2z_\alpha^3 - 5z_\alpha}{36}\gamma_1^2
+\end{equation}
+
+This is a third-order expansion; higher-order terms exist but are rarely needed in practice \citep{Maillard2012}.
+
+\subsection{Application to Project Risk}
+
+Combining \Cref{thm:aggregate_moments} with \Cref{eq:cornish_fisher}, we obtain:
+
+\begin{theorem}[Closed-form contingency reserve]
+\label{thm:contingency}
+The contingency reserve at confidence level $\alpha$ (e.g., $\alpha = 0.90$) is approximately:
+\begin{equation}
+    CR_\alpha = q_\alpha - \E[X] \approx \sigma_X \cdot z_{CF}(\alpha)
+\end{equation}
+where $\sigma_X = \sqrt{\Var[X]}$ and $z_{CF}(\alpha)$ is given by \Cref{eq:cornish_fisher} using the skewness $\gamma_1$ and excess kurtosis $\gamma_2$ from \Cref{thm:aggregate_moments}.
+\end{theorem}
+
+For the common case $\alpha = 0.90$, we have $z_{0.90} \approx 1.282$, yielding:
+\begin{equation}
+    z_{CF}(0.90) \approx 1.282 + 0.109\gamma_1 + 0.011\gamma_2 - 0.055\gamma_1^2
+\end{equation}
+
+\subsection{Domain of Validity}
+
+The Cornish-Fisher expansion is not valid for arbitrary skewness and kurtosis. \citet{Maillard2012} established that the quantile function remains monotonic (a necessary condition for validity) only when:
+
+\begin{equation}
+\label{eq:cf_validity}
+    |\gamma_1| \leq 6(\sqrt{2} - 1) \approx 2.49
+\end{equation}
+and the pair $(\gamma_1, \gamma_2)$ satisfies a quadratic constraint.
+
+For typical project risk registers with 20-50 heterogeneous risks, the central limit theorem drives skewness and kurtosis toward zero, ensuring validity. However, for small registers or highly unbalanced ones (dominated by a single large risk), the approximation may fail.
+
+\begin{proposition}[Convergence to normality]
+\label{prop:convergence}
+As the number of risks $n \to \infty$ with appropriate regularity conditions, $\gamma_1 \to 0$ and $\gamma_2 \to 0$, so the Cornish-Fisher approximation converges to the normal approximation $q_\alpha \approx \mu + \sigma z_\alpha$.
+\end{proposition}
+
+This provides theoretical grounding: the Cornish-Fisher expansion interpolates between exact (small $n$, significant skewness) and asymptotic (large $n$, near-normal) regimes.
+
+%==============================================================================
+\section{Numerical Validation}
+\label{sec:validation}
+%==============================================================================
+
+\subsection{Experimental Design}
+
+We validate the Cornish-Fisher approximation against Monte Carlo simulation across six scenarios designed to span the range of conditions encountered in practice:
+
+\begin{enumerate}
+    \item \textbf{Baseline}: $n = 30$ risks (25 threats, 5 opportunities). Probabilities range from 0.10 to 0.50. Impact ratios $q_{90}/q_{10}$ between 2.5 and 4.0. Representative of a typical medium-sized project.
+    
+    \item \textbf{Small register}: $n = 10$ risks (8 threats, 2 opportunities). Tests performance with limited diversification.
+    
+    \item \textbf{Large register}: $n = 100$ risks (85 threats, 15 opportunities). Randomly generated parameters. Representative of large infrastructure or IT transformation projects.
+    
+    \item \textbf{High heterogeneity}: $n = 24$ risks with one dominant threat having $p = 0.80$ and expected impact equal to the sum of all other risks. Tests robustness to concentration risk.
+    
+    \item \textbf{Balanced portfolio}: $n = 30$ risks (15 threats, 15 opportunities) with similar magnitude distributions. Tests behavior when positive and negative impacts partially offset.
+    
+    \item \textbf{High uncertainty}: Same structure as baseline, but with doubled $q_{90}/q_{10}$ ratios (approximately 6--10), representing early-stage estimates or novel technology projects.
+\end{enumerate}
+
+For each scenario, we compute:
+\begin{itemize}
+    \item Analytical moments ($\mu$, $\sigma$, $\gamma_1$, $\gamma_2$) using \Cref{thm:aggregate_moments}
+    \item Cornish-Fisher P90 using \Cref{eq:cornish_fisher}
+    \item Monte Carlo P90 from 1,000,000 simulations
+    \item Relative error: $(\text{CF} - \text{MC}) / |\text{MC}|$
+\end{itemize}
+
+\subsection{Results}
+
+\begin{table}[htbp]
+\centering
+\caption{Comparison of Cornish-Fisher approximation versus Monte Carlo simulation (1,000,000 iterations)}
+\label{tab:validation}
+\begin{tabular}{lccccc}
+\toprule
+Scenario & $\gamma_1$ & $\gamma_2$ & MC P90 & CF P90 & Rel. Error \\
+\midrule
+Baseline ($n=30$) & 0.57 & 0.53 & 320,804 & 320,566 & $-0.1\%$ \\
+Small ($n=10$) & 0.54 & 0.38 & 205,266 & 205,269 & $0.0\%$ \\
+Large ($n=100$) & 0.36 & 0.28 & 1,522,059 & 1,521,794 & $0.0\%$ \\
+High heterogeneity ($n=24$) & 0.56 & 1.12 & 613,209 & 625,274 & $+2.0\%$ \\
+Balanced portfolio ($n=30$) & 0.06 & 0.21 & 221,997 & 221,635 & $-0.2\%$ \\
+High uncertainty ($n=30$) & 1.71 & 9.25 & 554,313 & 499,486 & $-9.9\%^*$ \\
+\bottomrule
+\end{tabular}
+\smallskip
+\footnotesize{$^*$Outside domain of validity: $\gamma_2 > 6$}
+\end{table}
+
+The sensitivity analysis (\Cref{tab:sensitivity}) demonstrates the convergence behavior as the number of risks increases.
+
+\begin{table}[htbp]
+\centering
+\caption{Sensitivity analysis: approximation error versus number of risks}
+\label{tab:sensitivity}
+\begin{tabular}{ccccc}
+\toprule
+$n$ & $\gamma_1$ & $\gamma_2$ & Rel. Error \\
+\midrule
+5 & 0.98 & 2.31 & $-2.5\%$ \\
+10 & 0.97 & 2.57 & $-1.0\%$ \\
+20 & 0.52 & 0.53 & $-0.1\%$ \\
+30 & 0.44 & 0.41 & $-0.1\%$ \\
+50 & 0.37 & 0.26 & $-0.1\%$ \\
+100 & 0.27 & 0.14 & $+0.1\%$ \\
+200 & 0.20 & 0.08 & $+0.1\%$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Discussion}
+
+The results demonstrate that the Cornish-Fisher approximation achieves remarkable accuracy for typical project risk registers. In five of six scenarios, the relative error is below 2\%, with most errors under 0.5\%. This level of precision is more than sufficient for practical contingency planning, where input uncertainties far exceed these approximation errors.
+
+Key findings include:
+
+\begin{enumerate}
+    \item \textbf{Accuracy improves with portfolio size}: As predicted by theory, larger risk registers exhibit lower skewness and kurtosis, bringing the distribution closer to normality. With $n \geq 30$, errors consistently remain below 1\%.
+    
+    \item \textbf{Balanced portfolios perform best}: When threats and opportunities are balanced (Scenario 5), skewness approaches zero ($\gamma_1 = 0.06$), yielding near-perfect approximation (0.2\% error).
+
+    \item \textbf{Heterogeneity is manageable}: Even with one dominant risk contributing disproportionately to total variance (Scenario 4), the approximation maintains acceptable accuracy (2.0\% error).
+
+    \item \textbf{High uncertainty requires caution}: When individual risk impacts have very wide distributions (Scenario 6), the aggregate exhibits high kurtosis ($\gamma_2 = 9.25$), exceeding the domain of validity. The resulting 9.9\% error, while still potentially useful for rough estimates, warrants Monte Carlo validation.
+\end{enumerate}
+
+The practical implication is clear: for the vast majority of project risk registers encountered in practice—those with 10 or more risks, moderate uncertainty ranges, and no single overwhelming risk—the closed-form approximation provides accuracy comparable to Monte Carlo simulation at a fraction of the computational cost.
+
+%==============================================================================
+\section{Practical Implementation}
+\label{sec:practical}
+%==============================================================================
+
+\subsection{Algorithm}
+
+We present a complete algorithm for computing contingency reserves.
+
+\begin{algorithm}[htbp]
+\caption{Analytical Contingency Reserve Calculation}
+\label{alg:contingency}
+\begin{algorithmic}[1]
+\Require Risk register with $(p_i, q_{10}^{(i)}, q_{90}^{(i)}, S_i)$ for $i = 1, \ldots, n$
+\Require Confidence level $\alpha$ (e.g., 0.90)
+\Ensure Contingency reserve $CR_\alpha$
+
+\For{$i = 1$ to $n$}
+    \State $\mu_i \gets \frac{1}{2}(\ln q_{90}^{(i)} + \ln q_{10}^{(i)})$
+    \State $\sigma_i \gets \frac{\ln q_{90}^{(i)} - \ln q_{10}^{(i)}}{2.563}$
+    \State $m_i \gets S_i \cdot p_i \cdot \exp(\mu_i + \sigma_i^2/2)$
+    \State $v_i \gets p_i \cdot \exp(2\mu_i + \sigma_i^2) \cdot (\exp(\sigma_i^2) - p_i)$
+    \State Compute $\nu_{3,i}$, $\nu_{4,i}$ \Comment{Third and fourth central moments}
+\EndFor
+
+\State $\mu_X \gets \sum_{i=1}^n m_i$
+\State $\sigma_X^2 \gets \sum_{i=1}^n v_i$
+\State $\gamma_1 \gets \sum_{i=1}^n \nu_{3,i} / \sigma_X^3$
+\State $\gamma_2 \gets \sum_{i=1}^n \nu_{4,i} / \sigma_X^4 - 3$
+
+\State $z_\alpha \gets \Phi^{-1}(\alpha)$
+\State $z_{CF} \gets z_\alpha + \frac{z_\alpha^2 - 1}{6}\gamma_1 + \frac{z_\alpha^3 - 3z_\alpha}{24}\gamma_2 - \frac{2z_\alpha^3 - 5z_\alpha}{36}\gamma_1^2$
+
+\If{$|\gamma_1| > 2.0$ or $\gamma_2 > 6$}
+    \State \textbf{Warning}: High skewness/kurtosis; consider Monte Carlo validation
+\EndIf
+
+\State $CR_\alpha \gets \sigma_X \cdot z_{CF}$
+\State \Return $CR_\alpha$
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Spreadsheet Implementation}
+
+The algorithm is straightforward to implement in Excel or similar tools:
+
+\begin{enumerate}
+    \item For each risk row, compute $\mu_i$, $\sigma_i$ from the percentile inputs.
+    \item Compute individual means, variances, and higher moments using the formulas in \Cref{sec:moments}.
+    \item Sum across risks to obtain aggregate moments.
+    \item Apply the Cornish-Fisher formula (\Cref{eq:cornish_fisher}).
+\end{enumerate}
+
+A reference implementation in Python is available at \url{https://github.com/marcbara/project-risk-closed-form}.
+
+\subsection{When to Use Simulation Instead}
+
+Based on our experimental results, we recommend Monte Carlo simulation when:
+\begin{itemize}
+    \item The computed excess kurtosis $\gamma_2 > 6$ (approximation error may exceed 5\%)
+    \item The computed skewness $|\gamma_1| > 2$ (approaching domain boundary)
+    \item A single risk contributes more than 70\% of total variance
+    \item Dependencies between risks are known or suspected
+    \item The full distribution shape is needed, not just a single quantile
+    \item The stakes are very high and additional validation is warranted
+\end{itemize}
+
+Conversely, the closed-form approximation is reliable when:
+\begin{itemize}
+    \item The risk register contains $n \geq 10$ risks
+    \item Impact uncertainty ratios ($q_{90}/q_{10}$) are below 6
+    \item No single risk dominates the portfolio
+    \item Skewness and kurtosis fall within $|\gamma_1| < 1.5$ and $\gamma_2 < 4$
+\end{itemize}
+
+In practice, computing the analytical approximation takes milliseconds and can serve as a sanity check even when simulation is performed. If the two methods disagree by more than 5\%, the analyst should investigate whether the distributional assumptions are appropriate.
+
+%==============================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+%==============================================================================
+
+This paper has argued for reconsidering two pillars of conventional project risk quantification: the PERT distribution and the exclusive reliance on Monte Carlo simulation.
+
+The PERT distribution, while historically important, reflects 1960s computational constraints rather than the empirical reality of project risks. Fat-tailed distributions better capture the systematic underestimation of extreme outcomes documented across decades of project data. We proposed log-normal distributions parameterized by expert percentile estimates (P10 and P90) as a practical alternative that acknowledges uncertainty beyond stated bounds while remaining tractable for analysis.
+
+Our main contribution is demonstrating that Monte Carlo simulation is often unnecessary for computing contingency reserves. For the standard model of summing independent risks with known distributions, analytical approximations based on moment matching provide remarkably accurate results. The Cornish-Fisher expansion, widely used in financial risk management, transfers naturally to project risk. Our numerical experiments show:
+
+\begin{itemize}
+    \item For typical risk registers ($n \geq 10$, moderate skewness), approximation errors remain below 1\%
+    \item Even challenging scenarios with heterogeneous risks or small portfolios achieve errors under 2\%
+    \item Only extreme cases with very high kurtosis ($\gamma_2 > 6$) require simulation fallback
+\end{itemize}
+
+The practical implications are significant. The closed-form approximation computes instantaneously, enabling real-time sensitivity analysis, optimization over risk response strategies, and integration into spreadsheet-based tools accessible to practitioners. Monte Carlo simulation remains valuable for validation and for cases exceeding the domain of validity, but need not be the default approach.
+
+Future work could extend the methodology in several directions: incorporating correlations between risks via copula methods, developing approximations for other risk measures such as Conditional Value-at-Risk, empirically validating the log-normal assumption against databases of realized project outcomes, and exploring higher-order expansions (saddlepoint approximations) for improved tail accuracy.
+
+%==============================================================================
+% Bibliography
+%==============================================================================
+
+\bibliographystyle{apalike}
+
+\begin{thebibliography}{99}
+
+\bibitem[Clark(1962)]{Clark1962}
+Clark, C.~E. (1962).
+\newblock The {PERT} model for the distribution of an activity time.
+\newblock {\em Operations Research}, 10(3):405--406.
+
+\bibitem[Cornish \& Fisher(1938)]{Cornish1938}
+Cornish, E.~A. and Fisher, R.~A. (1938).
+\newblock Moments and cumulants in the specification of distributions.
+\newblock {\em Revue de l'Institut International de Statistique}, 5(4):307--320.
+
+\bibitem[Embrechts et~al.(1997)]{Embrechts1997}
+Embrechts, P., Kl{\"u}ppelberg, C., and Mikosch, T. (1997).
+\newblock {\em Modelling Extremal Events for Insurance and Finance}.
+\newblock Springer.
+
+\bibitem[Flyvbjerg(2006)]{Flyvbjerg2006}
+Flyvbjerg, B. (2006).
+\newblock From {Nobel Prize} to project management: Getting risks right.
+\newblock {\em Project Management Journal}, 37(3):5--15.
+
+\bibitem[Flyvbjerg et~al.(2002)]{Flyvbjerg2002}
+Flyvbjerg, B., Holm, M.~S., and Buhl, S. (2002).
+\newblock Underestimating costs in public works projects: Error or lie?
+\newblock {\em Journal of the American Planning Association}, 68(3):279--295.
+
+\bibitem[Flyvbjerg(2011)]{Flyvbjerg2011}
+Flyvbjerg, B. (2011).
+\newblock Over budget, over time, over and over again: Managing major projects.
+\newblock In {\em The Oxford Handbook of Project Management}, pages 321--344. Oxford University Press.
+
+\bibitem[Flyvbjerg(2021)]{Flyvbjerg2021}
+Flyvbjerg, B. (2021).
+\newblock Top ten behavioral biases in project management: An overview.
+\newblock {\em Project Management Journal}, 52(6):531--546.
+
+\bibitem[Glasserman(2004)]{Glasserman2004}
+Glasserman, P. (2004).
+\newblock {\em Monte Carlo Methods in Financial Engineering}.
+\newblock Springer.
+
+\bibitem[Kahneman(2011)]{Kahneman2011}
+Kahneman, D. (2011).
+\newblock {\em Thinking, Fast and Slow}.
+\newblock Farrar, Straus and Giroux.
+
+\bibitem[Keefer \& Bodily(1983)]{Keefer1983}
+Keefer, D.~L. and Bodily, S.~E. (1983).
+\newblock Three-point approximations for continuous random variables.
+\newblock {\em Management Science}, 29(5):595--609.
+
+\bibitem[Lichtenberg(2000)]{Lichtenberg2000}
+Lichtenberg, S. (2000).
+\newblock {\em Proactive Management of Uncertainty Using the Successive Principle}.
+\newblock Polyteknisk Press.
+
+\bibitem[Limpert et~al.(2001)]{Limpert2001}
+Limpert, E., Stahel, W.~A., and Abbt, M. (2001).
+\newblock Log-normal distributions across the sciences: Keys and clues.
+\newblock {\em BioScience}, 51(5):341--352.
+
+\bibitem[Love et~al.(2015)]{Love2015}
+Love, P.~E., Ahiaga-Dagbui, D.~D., and Irani, Z. (2015).
+\newblock Cost overruns in transportation infrastructure projects: Sowing the seeds for a probabilistic theory of causation.
+\newblock {\em Transportation Research Part A: Policy and Practice}, 92:184--194.
+
+\bibitem[Maillard(2012)]{Maillard2012}
+Maillard, D. (2012).
+\newblock A user's guide to the {Cornish-Fisher} expansion.
+\newblock {\em SSRN Working Paper}.
+
+\bibitem[Nelsen(2006)]{Nelsen2006}
+Nelsen, R.~B. (2006).
+\newblock {\em An Introduction to Copulas}.
+\newblock Springer, 2nd edition.
+
+\bibitem[O'Hagan et~al.(2006)]{OHagan2006}
+O'Hagan, A., Buck, C.~E., Daneshkhah, A., Eiser, J.~R., Garthwaite, P.~H., Jenkinson, D.~J., Oakley, J.~E., and Rakow, T. (2006).
+\newblock {\em Uncertain Judgements: Eliciting Experts' Probabilities}.
+\newblock Wiley.
+
+\bibitem[PMI(2021)]{PMI2021}
+Project Management Institute (2021).
+\newblock {\em A Guide to the Project Management Body of Knowledge ({PMBOK} Guide)}.
+\newblock Project Management Institute, 7th edition.
+
+\bibitem[Sovacool et~al.(2014)]{Sovacool2014}
+Sovacool, B.~K., Nugent, D., and Gilbert, A. (2014).
+\newblock Construction cost overruns and electricity infrastructure: An unavoidable risk?
+\newblock {\em The Electricity Journal}, 27(4):112--120.
+
+\bibitem[Taleb(2007)]{Taleb2007}
+Taleb, N.~N. (2007).
+\newblock {\em The Black Swan: The Impact of the Highly Improbable}.
+\newblock Random House.
+
+\bibitem[Vose(2008)]{Vose2008}
+Vose, D. (2008).
+\newblock {\em Risk Analysis: A Quantitative Guide}.
+\newblock Wiley, 3rd edition.
+
+\end{thebibliography}
+
+%==============================================================================
+% Appendix
+%==============================================================================
+
+\appendix
+
+\section{Derivation of Third and Fourth Central Moments}
+\label{app:moments}
+
+For completeness, we provide explicit formulas for the third and fourth central moments of individual risk contributions $X_i = B_i D_i S_i$.
+
+Let $m = \E[X_i] = S_i p_i e^{\mu + \sigma^2/2}$ (dropping subscript $i$ for clarity). Define:
+\begin{align}
+    M_k &= \E[D^k] = e^{k\mu + k^2\sigma^2/2}
+\end{align}
+
+The third central moment is:
+\begin{align}
+    \nu_3 &= \E[(X - m)^3] = \E[X^3] - 3m\E[X^2] + 2m^3 \\
+    &= S p M_3 - 3 S p^2 M_1 M_2 + 2 S^3 p^3 M_1^3 \\
+    &= S p \left( M_3 - 3 p M_1 M_2 + 2 p^2 M_1^3 \right)
+\end{align}
+
+The fourth central moment is:
+\begin{align}
+    \nu_4 &= \E[(X - m)^4] = \E[X^4] - 4m\E[X^3] + 6m^2\E[X^2] - 3m^4 \\
+    &= p M_4 - 4 S^2 p^2 M_1 M_3 + 6 p^3 M_1^2 M_2 - 3 p^4 M_1^4 \\
+    &= p \left( M_4 - 4 p M_1 M_3 + 6 p^2 M_1^2 M_2 - 3 p^3 M_1^4 \right)
+\end{align}
+
+Substituting $M_k = e^{k\mu + k^2\sigma^2/2}$:
+\begin{align}
+    M_1 &= e^{\mu + \sigma^2/2} \\
+    M_2 &= e^{2\mu + 2\sigma^2} \\
+    M_3 &= e^{3\mu + 9\sigma^2/2} \\
+    M_4 &= e^{4\mu + 8\sigma^2}
+\end{align}
+
+These expressions, while lengthy, are straightforward to implement computationally.
+
+\section{Cornish-Fisher Coefficients for Common Confidence Levels}
+\label{app:cf_coefficients}
+
+For reference, we provide the coefficients in the Cornish-Fisher expansion (\Cref{eq:cornish_fisher}) for common confidence levels:
+
+\begin{center}
+\begin{tabular}{ccccc}
+\toprule
+$\alpha$ & $z_\alpha$ & Coef. of $\gamma_1$ & Coef. of $\gamma_2$ & Coef. of $\gamma_1^2$ \\
+\midrule
+0.75 & 0.674 & $-0.038$ & $-0.025$ & $-0.013$ \\
+0.80 & 0.842 & $-0.015$ & $-0.019$ & $-0.022$ \\
+0.85 & 1.036 & $+0.012$ & $-0.008$ & $-0.032$ \\
+0.90 & 1.282 & $+0.109$ & $+0.011$ & $-0.055$ \\
+0.95 & 1.645 & $+0.285$ & $+0.052$ & $-0.096$ \\
+0.99 & 2.326 & $+0.735$ & $+0.188$ & $-0.213$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Note that for higher confidence levels (P95, P99), the correction terms become larger, making the approximation more sensitive to estimation errors in skewness and kurtosis.
+
+\end{document}

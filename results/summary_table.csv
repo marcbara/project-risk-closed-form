@@ -1,0 +1,7 @@
+Scenario,n,gamma1,gamma2,MC_P90,CF_P90,Relative_Error_Pct
+Baseline (n=30),30,0.57,0.53,320804,320566,-0.1
+Small (n=10),10,0.54,0.38,205266,205269,0.0
+Large (n=100),100,0.36,0.28,1522059,1521794,-0.0
+High heterogeneity,24,0.56,1.12,613209,625274,2.0
+Balanced portfolio,30,0.06,0.21,221997,221635,-0.2
+High uncertainty,30,1.71,9.25,554313,499486,-9.9
