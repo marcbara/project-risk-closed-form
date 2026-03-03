@@ -38,7 +38,7 @@
 \newcommand{\N}{\mathbb{N}}
 \newcommand{\Prob}{\mathbb{P}}
 
-\title{Beyond PERT and Monte Carlo: Analytical Approximations for Project Risk Contingency Reserves with Fat-Tailed Distributions}
+\title{Closed-Form Contingency Reserves: Enabling Optimization-Based Project Risk Management Beyond Monte Carlo}
 
 \author{
 Marc Bara\\
@@ -54,13 +54,13 @@ Marc Bara\\
 \maketitle
 
 \begin{abstract}
-Traditional project risk quantification relies on Monte Carlo simulation of risk registers where each risk is modeled as a Bernoulli trial with PERT-distributed impacts. This paper challenges both components of this standard approach. First, we present empirical and theoretical arguments against the PERT distribution, demonstrating that its bounded support systematically underestimates tail risks—a critical flaw given extensive evidence of fat-tailed behavior in project cost and schedule overruns. Second, we derive closed-form approximations for the quantiles of aggregate risk distributions, eliminating the need for computationally intensive simulation in most practical cases.
+Traditional project risk quantification relies on Monte Carlo simulation of risk registers where each risk is modeled as a Bernoulli trial with PERT-distributed impacts. This paper challenges both components of this standard approach. First, we present empirical and theoretical arguments against the PERT distribution, demonstrating that its bounded support systematically underestimates tail risks—a critical flaw given extensive evidence of fat-tailed behavior in project cost and schedule overruns. Second, we derive the first closed-form analytical expressions for the quantiles of aggregate project risk distributions under a compound Bernoulli--log-normal model, transferring the Cornish-Fisher expansion from financial risk management to project risk for the first time.
 
-We propose a model where risk impacts follow log-normal distributions estimated from expert percentiles (P10 and P90), and derive the first four cumulants of the aggregate distribution accounting for both threats and opportunities. Using the Cornish-Fisher expansion, we obtain analytical expressions for contingency reserves at arbitrary confidence levels.
+We propose a model where risk impacts follow log-normal distributions estimated from expert percentiles (P10 and P90), and derive the first four cumulants of the aggregate distribution accounting for both threats and opportunities. Using the Cornish-Fisher expansion, we obtain analytical expressions for contingency reserves at arbitrary confidence levels applicable to both cost and schedule risk.
 
-Numerical experiments across six scenarios demonstrate that our approximation achieves remarkable accuracy: errors below 0.5\% for typical project risk registers ($n \geq 30$ risks), and below 2\% even for challenging cases with high heterogeneity or small portfolios ($n = 10$). The approximation degrades only when excess kurtosis exceeds 6, which occurs primarily with very wide uncertainty ranges in individual risk estimates. For the 95\% of practical cases falling within the domain of validity, the closed-form solution provides accuracy comparable to 1,000,000-iteration Monte Carlo simulation while computing instantaneously.
+Numerical experiments across six scenarios demonstrate that our approximation achieves remarkable accuracy: errors below 0.5\% for typical project risk registers ($n \geq 30$ risks), and below 2\% even for challenging cases with high heterogeneity or small portfolios ($n = 10$). The approximation degrades only when excess kurtosis exceeds 6. Beyond computational speed, the closed-form nature of the solution enables a class of optimization problems previously intractable with simulation: gradient-based allocation of mitigation budgets across risks, portfolio-level reserve optimization across multiple projects, and closed-form sensitivity analysis of contingency to individual risk parameters.
 
-The results offer practitioners a theoretically grounded, computationally efficient alternative to simulation-only approaches, enabling real-time sensitivity analysis and integration into spreadsheet-based tools.
+The results establish a theoretically grounded analytical framework that complements simulation and opens optimization-based approaches to project risk management previously intractable with Monte Carlo methods.
 
 \medskip
 \noindent\textbf{Keywords:} Project risk management, contingency reserves, fat-tailed distributions, Cornish-Fisher expansion, analytical approximation, log-normal distribution, Monte Carlo simulation
@@ -77,6 +77,8 @@ This methodology, while widely adopted, rests on assumptions that deserve scruti
 
 Furthermore, the reliance on Monte Carlo simulation, while flexible, introduces computational overhead and obscures the mathematical structure of the problem. For a risk register with $n$ independent risks, the aggregate impact is a sum of random variables with known distributions. Such sums have been studied extensively in probability theory and actuarial science, yielding analytical approximations that can replace or complement simulation \citep{Embrechts1997}.
 
+Recent work has highlighted the need for more holistic frameworks for cost contingency estimation \citep{Zhang2025} and documented that risk management in practice extends well beyond formal processes \citep{Willumsen2024}, underscoring the value of computationally efficient tools that are accessible to practitioners without specialist simulation software.
+
 This paper makes three contributions:
 
 \begin{enumerate}
@@ -84,7 +86,7 @@ This paper makes three contributions:
     
     \item We propose an alternative model using log-normal distributions for risk impacts, parameterized through expert estimates of percentiles rather than impossible-to-know absolute bounds.
     
-    \item We derive closed-form approximations for the quantiles of aggregate project risk, enabling rapid computation of contingency reserves without simulation.
+    \item We derive the first closed-form expressions for aggregate risk quantiles under a compound Bernoulli--log-normal model, transferring the Cornish-Fisher expansion to project risk and enabling exact gradient-based optimization over response strategies and portfolio reserves.
 \end{enumerate}
 
 The remainder of this paper is organized as follows. \Cref{sec:critique_pert} examines the shortcomings of the PERT distribution. \Cref{sec:model} presents our proposed model. \Cref{sec:moments} derives the moments of the aggregate distribution. \Cref{sec:approximation} develops the Cornish-Fisher approximation for quantiles. \Cref{sec:validation} validates the approach against Monte Carlo simulation. \Cref{sec:practical} provides practical guidance for implementation. \Cref{sec:conclusion} concludes.
@@ -324,6 +326,10 @@ where $z_\alpha = \Phi^{-1}(\alpha)$ is the standard normal quantile and:
 
 This is a third-order expansion; higher-order terms exist but are rarely needed in practice \citep{Maillard2012}.
 
+\begin{remark}[Choice of expansion and autodifferentiability]
+Alternative moment-based expansions exist, notably Gram-Charlier Type A and Edgeworth series \citep{Embrechts1997}. Both expand the PDF or CDF rather than the quantile function directly; recovering $q_\alpha$ requires numerical root-finding, which breaks the analytical computation graph. The Cornish-Fisher expansion, by contrast, expresses $q_\alpha$ as an explicit polynomial in $(\mu, \sigma, \gamma_1, \gamma_2)$, which are themselves closed-form functions of the risk parameters $(p_i, \mu_i, \sigma_i)$. This makes $CR_\alpha$ fully differentiable in closed form: partial derivatives with respect to any risk parameter can be computed exactly via automatic differentiation frameworks (e.g., JAX, PyTorch), enabling gradient-based optimization over mitigation strategies and portfolio-level reserve allocation at scale.
+\end{remark}
+
 \subsection{Application to Project Risk}
 
 Combining \Cref{thm:aggregate_moments} with \Cref{eq:cornish_fisher}, we obtain:
@@ -518,7 +524,10 @@ Based on our experimental results, we recommend Monte Carlo simulation when:
     \item Dependencies between risks are known or suspected
     \item The full distribution shape is needed, not just a single quantile
     \item The stakes are very high and additional validation is warranted
+    \item Temporal cascades are present, where the occurrence of one risk shifts the timing and probability of subsequent risks \citep{Bara2025}
 \end{itemize}
+
+The closed-form approximation is also the natural choice whenever $CR_\alpha$ must be evaluated repeatedly as part of an optimization loop—for example, when allocating a mitigation budget across risks or optimizing reserve levels across a project portfolio—since Monte Carlo noise would destabilize gradient estimates.
 
 Conversely, the closed-form approximation is reliable when:
 \begin{itemize}
@@ -547,9 +556,9 @@ Our main contribution is demonstrating that Monte Carlo simulation is often unne
     \item Only extreme cases with very high kurtosis ($\gamma_2 > 6$) require simulation fallback
 \end{itemize}
 
-The practical implications are significant. The closed-form approximation computes instantaneously, enabling real-time sensitivity analysis, optimization over risk response strategies, and integration into spreadsheet-based tools accessible to practitioners. Monte Carlo simulation remains valuable for validation and for cases exceeding the domain of validity, but need not be the default approach.
+The practical implications extend beyond computational speed. Because $CR_\alpha$ is a closed-form differentiable function of all risk parameters, it can serve as an objective or constraint in optimization models that Monte Carlo simulation cannot efficiently support. Three directions are particularly promising. First, \emph{mitigation budget allocation}: given a fixed budget to reduce probabilities or impact ranges across $n$ risks, the optimal allocation can be found via gradient descent on the CF formula rather than through simulation-in-the-loop heuristics. Second, \emph{portfolio reserve optimization}: for an organization managing multiple projects simultaneously, joint reserve requirements can be expressed analytically, enabling portfolio-level optimization under a global confidence constraint. Third, \emph{schedule contingency}: the framework applies without modification to duration risks, yielding closed-form schedule reserves under the same Bernoulli--log-normal model. Monte Carlo simulation remains valuable for validation and for cases exceeding the domain of validity, but need not be the default approach.
 
-Future work could extend the methodology in several directions: incorporating correlations between risks via copula methods, developing approximations for other risk measures such as Conditional Value-at-Risk, empirically validating the log-normal assumption against databases of realized project outcomes, and exploring higher-order expansions (saddlepoint approximations) for improved tail accuracy.
+Future work could extend the methodology in several directions: incorporating correlations between risks via copula methods, developing approximations for other risk measures such as Conditional Value-at-Risk, and exploring higher-order expansions (saddlepoint approximations) for improved tail accuracy.
 
 %==============================================================================
 % Bibliography
@@ -558,6 +567,11 @@ Future work could extend the methodology in several directions: incorporating co
 \bibliographystyle{apalike}
 
 \begin{thebibliography}{99}
+
+\bibitem[Bara(2025)]{Bara2025}
+Bara, M. (2025).
+\newblock Enhanced {Monte Carlo} simulation for project risk analysis: integrating cost and schedule impacts with time-shifted risks and dependency modeling.
+\newblock {\em Applied Operations and Analytics}, 1(1):1--15.
 
 \bibitem[Clark(1962)]{Clark1962}
 Clark, C.~E. (1962).
@@ -658,6 +672,18 @@ Taleb, N.~N. (2007).
 Vose, D. (2008).
 \newblock {\em Risk Analysis: A Quantitative Guide}.
 \newblock Wiley, 3rd edition.
+
+\bibitem[Willumsen et~al.(2024)]{Willumsen2024}
+Willumsen, P.~L., Oehmen, J., and Selim, H.~M.~R. (2024).
+\newblock Project risk management in practice: the actuality of project risk management in organizations.
+\newblock {\em International Journal of Managing Projects in Business}, 17(4--5):593--617.
+\newblock \url{https://doi.org/10.1108/IJMPB-09-2023-0214}
+
+\bibitem[Zhang et~al.(2025)]{Zhang2025}
+Zhang, L., Li, Y., Sun, N., and Ning, Y. (2025).
+\newblock Understanding project cost contingency estimation: a holistic risk perspective.
+\newblock {\em International Journal of Managing Projects in Business}, 18(1):139--164.
+\newblock \url{https://doi.org/10.1108/IJMPB-07-2024-0162}
 
 \end{thebibliography}
 
